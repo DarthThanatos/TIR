@@ -18,15 +18,17 @@ def listen_to_hardware():
     pass
 
 def listen_to_software():
-    pass
+    cmd = raw_input("Type command to send in format [floor];[room];[device];[ID];[operation]: \n")
+    send(cmd)
 
 while True:
-    line = raw_input('Prompt ("stop" to quit, "h" to listen to hardware, "s" to listen to software): ')
-    if line == 'stop':
+    line = raw_input('Prompt ("q" to quit, "h" to listen to hardware, "s" to listen to software): \n')
+    if line == 'q':
         break
     if line == 'h':
         listen_to_hardware()
     elif line == 's':
         listen_to_software()
     else:
+        print "Not a valid option"
         continue

@@ -3,68 +3,87 @@ from pprint import PrettyPrinter
 from time import time
 
 p_print = PrettyPrinter().pprint
+timeDelta = 15
 
 class State(object):
     def __init__(self):
-        self.state = 0
-        self.auto_turned_on = False
-        self.timestamp = 0
-        self.state = 0
+        self.state = {} # int -> int
+        self.auto_turned_on = {}# int -> Bool
+        self.timestamp = {} # int -> time
 
-    def isAutoActivated(self):
-        if time() - self.timestamp > 5:
-            self.auto_turned_on = False
-        return self.auto_turned_on
+    def tryToInit(self, key):
+        if not key in self.state:
+            self.auto_turned_on[key] = False
+            self.state[key] = 0
+            self.timestamp[key] = time()
 
-    def setAutoState(self):
-        self.state = 1
-        self.timestamp = time()
-        self.auto_turned_on = True
+    def resetState(self):
+        for key in self.state:
+            if self.auto_turned_on[key]:
+                if time() - self.timestamp[key] > timeDelta:
+                    print "reseting", key
+                    self.state[key] = 0
+                    self.auto_turned_on[key] = False
+
+    def isAutoActivated(self, key):
+        self.tryToInit(key)
+        if time() - self.timestamp[key] > timeDelta and self.auto_turned_on:
+            print "checking auto activated: dev", key,"turned off"
+            self.auto_turned_on[key] = False
+        return self.auto_turned_on[key]
+
+    def setAutoState(self, key):
+        self.state[key] = 1
+        self.timestamp[key] = time()
+        self.auto_turned_on[key] = True
 
 
 class Command(object):
     pass
 
 class Add(Command):
-    def __init__(self, val, state):
+    def __init__(self, val, state, ser):
         self.val = val
         self.state = state
+        self.ser = ser
 
     def execute(self, aggregate_val):
-        if self.state.isAutoActivated(): print "Could not write, auto_turn_on set"
+        if self.state.isAutoActivated(aggregate_val): print "Could not write, auto_turn_on set"
         else:
             print "Device wrote:",self.val + aggregate_val
-            self.state.state = self.val
+            self.state.state[aggregate_val] = self.val
 
 
 class Change(Command):
-    def __init__(self, state):
+    def __init__(self, state, ser):
         self.state = state
+        self.ser = ser
 
     def execute(self, aggregate_val):
-        if self.state.isAutoActivated(): print "Could not write, auto_turn_on set"
+        if self.state.isAutoActivated(aggregate_val): print "Could not write, auto_turn_on set"
         else:
-            self.state.state = 0 if self.state.state == 1 else 1
-            print "Device changed state to:",self.state.state + aggregate_val
+            self.state.state[aggregate_val] = 0 if self.state.state[aggregate_val] == 1 else 1
+            print "Device changed state to:",self.state.state[aggregate_val] + aggregate_val
 
 class AdaptToMotion(Command):
-    def __init__(self, state):
+    def __init__(self, state, ser):
         self.state = state
+        self.ser = ser
 
     def execute(self, aggregate_val):
-        self.state.setAutoState()
-        print "Device set autoset:",self.state.state + aggregate_val
+        self.state.setAutoState(aggregate_val)
+        print "Device set autoset:",self.state.state[aggregate_val] + aggregate_val
 
 
 
 class CommandTree:
-    def __init__(self):
-
-        state = State()
-        addZero = Add(0, state)
-        addOne = Add(1, state)
-        change = Change(state)
-        adaptToMotion = AdaptToMotion(state)
+    def __init__(self, ser):
+        self.state = State()
+        state = self.state
+        addZero = Add(0, state, ser)
+        addOne = Add(1, state, ser)
+        change = Change(state, ser)
+        adaptToMotion = AdaptToMotion(state, ser)
 
         devices = ["lamp", "shutter"]
         devices_vals = {"lamp": 32, "shutter": 1000}
@@ -76,9 +95,11 @@ class CommandTree:
         root_settings = [(devices,devices_vals), (IDs, IDs_vals), (operations,operations_vals)]
         self.root = self.tree_recursion_level(root_settings)
 
+    def resetState(self):
+        state = self.state
+        state.resetState()
+
     def tree_recursion_level(self, lvl_settings):
-        # lvl_settings: [(names, names_vals_dict), ...] e.g. [(devices, devices_vals), ...]
-        # val - current Node val e.g. = 0
         if lvl_settings.__len__() > 0:
             names, names_vals_dict = lvl_settings[0]
             res = {}
@@ -119,8 +140,6 @@ class Node(AbstractNode):
 
     def execute(self, cmd, val):
         cmd_parts = cmd.split(";")
-        #print "\n" + cmd
-        #print "children of me:", self.children.keys()
         if self.name == cmd_parts[0]:
             if self.children != {}:
                 child = self.children[cmd_parts[1]]
@@ -136,9 +155,6 @@ class AsterixNode(AbstractNode):
 
 
     def execute(self, cmd,val):
-        #print "\n*:",cmd
-        #print "children of *:", self.children.keys()
-        #print self.vals
         cmd_parts = cmd.split(";")
         if not self.children == {}:
             for name, name_val in self.vals.items():
